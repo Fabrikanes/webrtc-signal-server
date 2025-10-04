@@ -3,6 +3,7 @@ import websockets
 import json
 import os
 
+# { room_id: { 'peers': [ws1, ws2], 'last_offer': {...} } }
 rooms = {}
 
 async def handler(websocket, path):
@@ -17,38 +18,42 @@ async def handler(websocket, path):
                     await websocket.send(json.dumps({"error": "room is required"}))
                     continue
 
+                if room not in rooms:
+                    rooms[room] = {'peers': [], 'last_offer': None}
+
+                room_data = rooms[room]
+
                 if msg_type == "join":
-                    if room not in rooms:
-                        rooms[room] = []
-                    if len(rooms[room]) >= 2:
+                    if len(room_data['peers']) >= 2:
                         await websocket.send(json.dumps({"error": "Room is full"}))
                         continue
-                    is_first = len(rooms[room]) == 0
-                    rooms[room].append(websocket)
-                    print(f"Отправка joined: is_first={is_first}")
+                    is_first = len(room_data['peers']) == 0
+                    room_data['peers'].append(websocket)
+
+                    # Отправить joined
                     await websocket.send(json.dumps({"type": "joined", "is_first": is_first}))
+
+                    # Если это второй участник и есть last_offer — отправить ему offer
+                    if not is_first and room_data['last_offer']:
+                        await websocket.send(json.dumps(room_data['last_offer']))
+
                     continue
 
-                # Рассылка другому участнику
-                peers = rooms.get(room, [])
-                for peer in peers:
+                # Если это offer — сохранить его
+                if msg_type == "offer":
+                    room_data['last_offer'] = data
+
+                # Рассылка всем, кроме отправителя
+                for peer in room_data['peers']:
                     if peer != websocket and peer.open:
                         await peer.send(message)
+
             except Exception as e:
                 print("Message error:", e)
     finally:
-        for room in list(rooms.keys()):
-            if websocket in rooms[room]:
-                rooms[room].remove(websocket)
-                if not rooms[room]:
-                    del rooms[room]
-
-async def main():
-    port = int(os.environ.get("PORT", 10000))
-    print(f"Сервер запускается на порту {port}...")
-    server = await websockets.serve(handler, "0.0.0.0", port)
-    await server.wait_closed()
-
-if __name__ == "__main__":
-    asyncio.run(main())
-
+        # Удалить из комнаты
+        for room_id, room_data in list(rooms.items()):
+            if websocket in room_data['peers']:
+                room_data['peers'].remove(websocket)
+                if not room_data['peers']:
+                    del rooms[room_id]
