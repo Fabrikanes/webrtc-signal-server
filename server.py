@@ -60,8 +60,5 @@ async def websocket_endpoint(websocket: WebSocket):
         pass
     finally:
         if current_room and current_room in rooms:
-            room_data = rooms[current_room]
-            if websocket in room_data['peers']:
-                room_data['peers'].remove(websocket)
-                if not room_data['peers']:
-                    del rooms[current_room]
+            del rooms[current_room]
+
