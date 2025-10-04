@@ -1,28 +1,31 @@
 # server.py
-from flask import Flask
-from flask_sock import Sock
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse
 import json
 import os
 
-app = Flask(__name__)
-sock = Sock(app)
+app = FastAPI()
 
 # { room: { 'peers': [ws1, ws2], 'last_offer': {...} } }
 rooms = {}
 
-@sock.route('/ws')
-def websocket_handler(ws):
+@app.get("/")
+async def root():
+    return {"status": "WebRTC Signal Server is running"}
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    current_room = None
     try:
         while True:
-            message = ws.receive()
-            if not message:
-                break
-            data = json.loads(message)
-            room = data.get("room")
-            msg_type = data.get("type")
+            data = await websocket.receive_text()
+            msg = json.loads(data)
+            room = msg.get("room")
+            msg_type = msg.get("type")
 
             if not room:
-                ws.send(json.dumps({"error": "room is required"}))
+                await websocket.send_text(json.dumps({"error": "room is required"}))
                 continue
 
             if room not in rooms:
@@ -32,38 +35,33 @@ def websocket_handler(ws):
 
             if msg_type == "join":
                 if len(room_data['peers']) >= 2:
-                    ws.send(json.dumps({"error": "Room is full"}))
+                    await websocket.send_text(json.dumps({"error": "Room is full"}))
                     continue
                 is_first = len(room_data['peers']) == 0
-                room_data['peers'].append(ws)
-                ws.send(json.dumps({"type": "joined", "is_first": is_first}))
-                # Отправить last_offer новому участнику
+                room_data['peers'].append(websocket)
+                current_room = room
+                await websocket.send_text(json.dumps({"type": "joined", "is_first": is_first}))
                 if not is_first and room_data['last_offer']:
-                    ws.send(json.dumps(room_data['last_offer']))
+                    await websocket.send_text(json.dumps(room_data['last_offer']))
                 continue
 
-            # Сохранить offer
             if msg_type == "offer":
-                room_data['last_offer'] = data
+                room_data['last_offer'] = msg
 
             # Рассылка другим
             for peer in room_data['peers']:
-                if peer != ws:
+                if peer != websocket:
                     try:
-                        peer.send(message)
+                        await peer.send_text(data)
                     except:
-                        pass  # игнорировать закрытые соединения
+                        pass
 
-    except Exception as e:
-        print("WS error:", e)
+    except WebSocketDisconnect:
+        pass
     finally:
-        # Удалить из комнаты
-        for room_id, room_data in list(rooms.items()):
-            if ws in room_data['peers']:
-                room_data['peers'].remove(ws)
+        if current_room and current_room in rooms:
+            room_data = rooms[current_room]
+            if websocket in room_data['peers']:
+                room_data['peers'].remove(websocket)
                 if not room_data['peers']:
-                    del rooms[room_id]
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+                    del rooms[current_room]
