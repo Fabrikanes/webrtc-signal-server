@@ -25,6 +25,7 @@ async def handler(websocket, path):
                         continue
                     is_first = len(rooms[room]) == 0
                     rooms[room].append(websocket)
+                    print(f"Отправка joined: is_first={is_first}")
                     await websocket.send(json.dumps({"type": "joined", "is_first": is_first}))
                     continue
 
@@ -50,3 +51,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
