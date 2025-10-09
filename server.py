@@ -60,5 +60,12 @@ async def websocket_endpoint(websocket: WebSocket):
         pass
     finally:
         if current_room and current_room in rooms:
-            del rooms[current_room]
+            room_data = rooms[current_room]
+            if websocket in room_data['peers']:
+                room_data['peers'].remove(websocket)
+            # Удаляем комнату ТОЛЬКО если в ней никого не осталось
+            if len(room_data['peers']) == 0:
+                del rooms[current_room]
+                print(f"Комната {current_room} удалена (пуста)")
+
 
