@@ -48,7 +48,8 @@ async def websocket_endpoint(websocket: WebSocket):
             if msg_type == "offer":
                 room_data['last_offer'] = msg
 
-            # Рассылка другим
+            # Пересылаем ВСЕ сообщения (offer, answer, ice) другим участникам
+            print(f"Получено сообщение: {msg_type} в комнате {room}, отправитель: {id(websocket)}")
             for peer in room_data['peers']:
                 if peer != websocket:
                     try:
@@ -67,5 +68,6 @@ async def websocket_endpoint(websocket: WebSocket):
             if len(room_data['peers']) == 0:
                 del rooms[current_room]
                 print(f"Комната {current_room} удалена (пуста)")
+
 
 
